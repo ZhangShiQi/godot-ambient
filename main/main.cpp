@@ -77,6 +77,7 @@
 #include "servers/rendering/rendering_server_default.h"
 #include "servers/text/text_server.h"
 #include "servers/text/text_server_dummy.h"
+#include "zzz/console/limbo_console.h"
 
 // 2D
 #ifndef NAVIGATION_2D_DISABLED
@@ -4362,6 +4363,10 @@ int Main::start() {
 
 		if (single_window || (!project_manager && !editor && embed_subwindows) || !DisplayServer::get_singleton()->has_feature(DisplayServer::Feature::FEATURE_SUBWINDOWS)) {
 			sml->get_root()->set_embedding_subwindows(true);
+		}
+
+		if (!project_manager && !editor && ZConsole::get_singleton()) {
+			ZConsole::get_singleton()->attach_to_root();
 		}
 
 		ResourceLoader::add_custom_loaders();

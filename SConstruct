@@ -435,6 +435,9 @@ opts.Update(env, {**ARGUMENTS, **env.Dictionary()})
 modules_detected = OrderedDict()
 module_search_paths = ["modules"]  # Built-in path.
 
+if os.path.isdir("zzz"):
+    module_search_paths.append(methods.convert_custom_modules_path("zzz"))
+
 if env["custom_modules"]:
     paths = env["custom_modules"].split(",")
     for p in paths:
