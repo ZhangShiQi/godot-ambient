@@ -5,3 +5,4 @@ Import("env")
 
 env.add_source_files(env.modules_sources, "*.cpp")
 env.add_source_files(env.modules_sources, "console/*.cpp")
+env.add_source_files(env.modules_sources, "global_var/*.cpp")
