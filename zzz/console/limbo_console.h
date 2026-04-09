@@ -45,7 +45,9 @@ class ZConsole : public CanvasLayer {
 
 	Control *input_blocker = nullptr;
 	PanelContainer *panel = nullptr;
+    PanelContainer *autocomplete_panel = nullptr;
 	RichTextLabel *output = nullptr;
+  RichTextLabel *autocomplete_output = nullptr;
 	LineEdit *entry = nullptr;
 	Control *previous_gui_focus = nullptr;
 
@@ -85,6 +87,8 @@ class ZConsole : public CanvasLayer {
 	void _fill_entry(const String &p_text);
 	void _clear_suggestions();
 	void _rebuild_autocomplete();
+ void _update_autocomplete_output();
+ void _update_autocomplete_position();
 	void _autocomplete(bool p_reverse = false);
 	void _search_history();
 	void _handle_entry_input(const Ref<InputEvent> &p_event);

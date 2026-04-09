@@ -225,6 +225,9 @@ void ZConsole::_notification(int p_what) {
 			if (panel) {
 				panel->hide();
 			}
+			if (autocomplete_panel) {
+				autocomplete_panel->hide();
+			}
 			if (input_blocker) {
 				input_blocker->hide();
 			}
@@ -301,6 +304,23 @@ void ZConsole::_build_gui() {
 	entry->set_keep_editing_on_text_submit(true);
 	entry->add_theme_font_size_override("font_size", font_size);
 	vbox->add_child(entry);
+
+	autocomplete_panel = memnew(PanelContainer);
+	autocomplete_panel->set_anchors_preset(Control::PRESET_TOP_LEFT);
+	autocomplete_panel->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	autocomplete_panel->hide();
+	autocomplete_panel->set_z_index(1);
+	add_child(autocomplete_panel);
+
+	autocomplete_output = memnew(RichTextLabel);
+	autocomplete_output->set_custom_minimum_size(Vector2(0, (float)font_size * 5.0f));
+	autocomplete_output->set_selection_enabled(false);
+	autocomplete_output->set_scroll_follow(true);
+	autocomplete_output->set_use_bbcode(true);
+	autocomplete_output->set_focus_mode(Control::FOCUS_NONE);
+	autocomplete_output->add_theme_font_size_override("normal_font_size", MAX(font_size - 1, 8));
+	autocomplete_output->hide();
+	autocomplete_panel->add_child(autocomplete_output);
 }
 
 void ZConsole::input(const Ref<InputEvent> &p_event) {
@@ -339,6 +359,14 @@ void ZConsole::_apply_visuals() {
 	}
 	if (output) {
 		output->add_theme_color_override("default_color", output_text_color);
+	}
+	if (autocomplete_output) {
+		autocomplete_output->add_theme_color_override("default_color", output_debug_color);
+	}
+	if (autocomplete_panel) {
+		Ref<StyleBoxFlat> autocomplete_style = memnew(StyleBoxFlat);
+		autocomplete_style->set_bg_color(Color(0.08, 0.08, 0.08, MIN(opacity + 0.04f, 1.0f)));
+		autocomplete_panel->add_theme_style_override("panel", autocomplete_style);
 	}
 }
 
@@ -764,21 +792,25 @@ void ZConsole::_fill_entry(const String &p_text) {
 	}
 	entry->set_text(p_text);
 	entry->set_caret_column(p_text.length());
+	_update_autocomplete_position();
 }
 
 void ZConsole::_clear_suggestions() {
 	autocomplete_matches.clear();
 	search_matches.clear();
 	search_index = -1;
+	_update_autocomplete_output();
 }
 
 void ZConsole::_rebuild_autocomplete() {
 	autocomplete_matches.clear();
 	if (!entry) {
+		_update_autocomplete_output();
 		return;
 	}
 	String text = entry->get_text();
 	if (text.is_empty()) {
+		_update_autocomplete_output();
 		return;
 	}
 	PackedStringArray argv = _expand_alias(_parse_command_line(text));
@@ -793,8 +825,95 @@ void ZConsole::_rebuild_autocomplete() {
 		_add_subcommand_autocomplete(text, matches);
 		_add_history_autocomplete(text, matches);
 	}
-	matches.sort();
-	autocomplete_matches = matches;
+	HashMap<String, bool> unique_matches;
+	PackedStringArray deduplicated_matches;
+	for (int i = 0; i < matches.size(); i++) {
+		if (!unique_matches.has(matches[i])) {
+			unique_matches.insert(matches[i], true);
+			deduplicated_matches.push_back(matches[i]);
+		}
+	}
+	deduplicated_matches.sort();
+	autocomplete_matches = deduplicated_matches;
+	_update_autocomplete_output();
+}
+
+void ZConsole::_update_autocomplete_output() {
+	if (!autocomplete_output || !autocomplete_panel) {
+		return;
+	}
+
+	autocomplete_output->clear();
+	if (autocomplete_matches.is_empty()) {
+		autocomplete_output->hide();
+		autocomplete_panel->hide();
+		return;
+	}
+
+	Ref<Font> font = autocomplete_output->get_theme_font("normal_font");
+	if (font.is_null()) {
+		font = autocomplete_output->get_theme_font("font");
+	}
+	const int autocomplete_font_size = autocomplete_output->get_theme_font_size("normal_font_size");
+	float max_width = 0.0f;
+	if (font.is_valid()) {
+		max_width = font->get_string_size("Autocomplete:", HORIZONTAL_ALIGNMENT_LEFT, -1, autocomplete_font_size).x;
+	}
+
+	autocomplete_output->show();
+	// autocomplete_output->append_text("[color=" + output_debug_color.to_html() + "]Autocomplete:[/color]\n");
+	const int max_visible = MIN(autocomplete_matches.size(), 8);
+	for (int i = 0; i < max_visible; i++) {
+		if (font.is_valid()) {
+			max_width = MAX(max_width, font->get_string_size(autocomplete_matches[i], HORIZONTAL_ALIGNMENT_LEFT, -1, autocomplete_font_size).x);
+		}
+		const String match = _bbcode_escape(autocomplete_matches[i]);
+		if (i == 0) {
+			autocomplete_output->append_text("[color=" + output_command_mention_color.to_html() + "][b]> " + match + "[/b][/color]\n");
+		} else {
+			autocomplete_output->append_text("  " + match + "\n");
+		}
+	}
+	if (autocomplete_matches.size() > max_visible) {
+		autocomplete_output->append_text("[color=" + output_debug_color.to_html() + "]... and " + itos(autocomplete_matches.size() - max_visible) + " more[/color]");
+	}
+
+	float line_height = (float)autocomplete_font_size * 1.5f;
+	float popup_width = Math::ceil(max_width + 28.0f);
+	float popup_height = Math::ceil(line_height * (max_visible + (autocomplete_matches.size() > max_visible ? 2 : 1)) + 12.0f);
+	autocomplete_output->set_custom_minimum_size(Vector2(MAX(popup_width - 12.0f, 0.0f), MAX(popup_height - 8.0f, 0.0f)));
+	autocomplete_panel->set_custom_minimum_size(Vector2(popup_width, popup_height));
+	autocomplete_panel->show();
+	_update_autocomplete_position();
+}
+
+void ZConsole::_update_autocomplete_position() {
+	if (!autocomplete_panel || !autocomplete_output || !entry || !panel || autocomplete_matches.is_empty()) {
+		return;
+	}
+
+	Ref<Font> font = entry->get_theme_font("font");
+	const int entry_font_size = entry->get_theme_font_size("font_size");
+	Ref<StyleBox> entry_style = entry->get_theme_stylebox("normal");
+	String text_before_caret = entry->get_text().substr(0, entry->get_caret_column());
+	float caret_offset_x = 0.0f;
+	if (font.is_valid()) {
+		caret_offset_x = font->get_string_size(text_before_caret, HORIZONTAL_ALIGNMENT_LEFT, -1, entry_font_size).x;
+	}
+
+	float content_left = entry_style.is_valid() ? entry_style->get_content_margin(Side::SIDE_LEFT) : 0.0f;
+	float content_bottom = entry_style.is_valid() ? entry_style->get_content_margin(Side::SIDE_BOTTOM) : 0.0f;
+	Vector2 popup_size = autocomplete_panel->get_combined_minimum_size();
+	Vector2 popup_position = entry->get_global_position();
+	popup_position.x += content_left + caret_offset_x + 2.0f;
+	popup_position.y += entry->get_size().y + content_bottom + 4.0f;
+
+	Vector2 panel_global_position = panel->get_global_position();
+
+	float min_x = panel_global_position.x;
+	float max_x = MAX(panel_global_position.x + panel->get_size().x - popup_size.x, min_x);
+	popup_position.x = CLAMP(popup_position.x, min_x, max_x);
+	autocomplete_panel->set_position(popup_position);
 }
 
 void ZConsole::_autocomplete(bool p_reverse) {
@@ -813,6 +932,7 @@ void ZConsole::_autocomplete(bool p_reverse) {
 	String match = autocomplete_matches[0];
 	autocomplete_matches.remove_at(0);
 	autocomplete_matches.push_back(match);
+	_update_autocomplete_output();
 }
 
 void ZConsole::_search_history() {
