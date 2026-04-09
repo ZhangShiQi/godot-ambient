@@ -8,7 +8,7 @@
 #include "zzz/console/limbo_console.h"
 #include "zzz/global_var/global_var.h"
 
-static ZConsole *limbo_console_singleton = nullptr;
+static ZConsole *global_console_singleton = nullptr;
 static ZGlobalVar *global_var_singleton = nullptr;
 
 void initialize_zzz_module(ModuleInitializationLevel p_level) {
@@ -25,8 +25,8 @@ void initialize_zzz_module(ModuleInitializationLevel p_level) {
 	global_var_engine_singleton.user_created = true;
 	Engine::get_singleton()->add_singleton(global_var_engine_singleton);
 
-	limbo_console_singleton = memnew(ZConsole);
-	Engine::Singleton singleton("ZConsole", limbo_console_singleton, "ZConsole");
+	global_console_singleton = memnew(ZConsole);
+	Engine::Singleton singleton("ZConsole", global_console_singleton, "ZConsole");
 
 	singleton.user_created = true;
 	Engine::get_singleton()->add_singleton(singleton);
@@ -45,14 +45,13 @@ void uninitialize_zzz_module(ModuleInitializationLevel p_level) {
 		global_var_singleton = nullptr;
 	}
 
-	if (limbo_console_singleton) {
+	if (global_console_singleton) {
 		if (Engine::get_singleton()->has_singleton("ZConsole")) {
 			Engine::get_singleton()->remove_singleton("ZConsole");
 		}
-		if (limbo_console_singleton->get_parent()) {
-			limbo_console_singleton->get_parent()->remove_child(limbo_console_singleton);
-		}
-		memdelete(limbo_console_singleton);
-		limbo_console_singleton = nullptr;
+
+		// 场景树的单例在销毁时会自动删除，所以这里不需要手动删除。
+		//memdelete(limbo_console_singleton);
+		global_console_singleton = nullptr;
 	}
 }

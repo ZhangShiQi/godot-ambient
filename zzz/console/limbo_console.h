@@ -28,7 +28,7 @@ class ZConsole : public CanvasLayer {
 	bool enabled = true;
 	bool print_to_stdout = false;
 	bool pause_when_open = true;
-	bool persist_history = true;
+	bool persist_history = false;
 	bool disable_in_release_build = false;
 	bool attached_to_root = false;
 	bool runtime_initialized = false;
