@@ -30,6 +30,8 @@ class ZConsole : public CanvasLayer {
 	bool pause_when_open = true;
 	bool persist_history = false;
 	bool disable_in_release_build = false;
+  StringName toggle_action_name = "limbo_console_toggle";
+	String toggle_shortcut = "QuoteLeft";
 	bool attached_to_root = false;
 	bool runtime_initialized = false;
 	bool is_open = false;
@@ -39,6 +41,7 @@ class ZConsole : public CanvasLayer {
 	float open_speed = 5.0f;
 	float opacity = 0.96f;
 	float open_t = 0.0f;
+	int font_size = 14;
 
 	Control *input_blocker = nullptr;
 	PanelContainer *panel = nullptr;
@@ -70,8 +73,10 @@ class ZConsole : public CanvasLayer {
 
 	static void _bind_methods();
 	void _notification(int p_what);
+    void input(const Ref<InputEvent> &p_event) override;
 
 	void _initialize_runtime();
+  void _load_project_settings();
 	void _build_gui();
 	void _attach_signals();
 	void _apply_visuals();
@@ -125,11 +130,15 @@ class ZConsole : public CanvasLayer {
 	void _cmd_exec(const String &p_file, bool p_silent = true);
 	void _cmd_fps_max(int p_limit = -1);
 	void _cmd_fullscreen();
+ void _cmd_set(const String &p_name, const Variant &p_value);
+	int _cmd_get(const String &p_name = String());
+ int _cmd_get_all();
 	int _cmd_help(const String &p_command_name = String());
 	int _cmd_log(int p_num_lines = 10);
 	void _cmd_quit();
 	void _cmd_unalias(const String &p_alias);
 	void _cmd_vsync(int p_mode = -1);
+	PackedStringArray _get_global_var_names() const;
 
 public:
 	static ZConsole *get_singleton() { return singleton; }

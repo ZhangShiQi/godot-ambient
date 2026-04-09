@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  limbo_console.cpp                                                     */
+/*  z_console.cpp                                                     */
 /**************************************************************************/
 
 #include "limbo_console.h"
@@ -23,7 +23,9 @@
 #include "scene/main/scene_tree.h"
 #include "scene/main/viewport.h"
 #include "scene/main/window.h"
+#include "scene/resources/style_box_flat.h"
 #include "servers/display/display_server.h"
+#include "zzz/global_var/global_var.h"
 
 ZConsole *ZConsole::singleton = nullptr;
 
@@ -85,15 +87,43 @@ void ZConsole::_initialize_runtime() {
 		return;
 	}
 
+	_load_project_settings();
+	_register_default_input_actions();
 	_build_gui();
 	_register_builtin_commands();
-	_register_default_input_actions();
 
 	if (persist_history) {
 		_history_load();
 	}
 
 	runtime_initialized = true;
+}
+
+void ZConsole::_load_project_settings() {
+	ProjectSettings *project_settings = ProjectSettings::get_singleton();
+	if (!project_settings) {
+		return;
+	}
+
+	enabled = bool(project_settings->get_setting("zzz/console/enabled", enabled));
+	persist_history = bool(project_settings->get_setting("zzz/console/persist_history", persist_history));
+	pause_when_open = bool(project_settings->get_setting("zzz/console/pause_when_open", pause_when_open));
+	height_ratio = CLAMP((float)(double)project_settings->get_setting("zzz/console/height_ratio", height_ratio), 0.2f, 1.0f);
+	open_speed = MAX((float)(double)project_settings->get_setting("zzz/console/open_speed", open_speed), 0.1f);
+	opacity = CLAMP((float)(double)project_settings->get_setting("zzz/console/opacity", opacity), 0.1f, 1.0f);
+	font_size = MAX((int)project_settings->get_setting("zzz/console/font_size", font_size), 8);
+
+	StringName configured_toggle_action = StringName(project_settings->get_setting("zzz/console/toggle_action", String(toggle_action_name)));
+	if (!configured_toggle_action.is_empty()) {
+		toggle_action_name = configured_toggle_action;
+	}
+
+	String configured_toggle_shortcut = project_settings->get_setting("zzz/console/toggle_shortcut", toggle_shortcut);
+	if (!configured_toggle_shortcut.is_empty()) {
+		toggle_shortcut = configured_toggle_shortcut;
+	}
+
+	set_process_input(enabled);
 }
 
 ZConsole::ZConsole() {
@@ -118,6 +148,57 @@ ZConsole::ZConsole() {
 	}
 }
 
+void ZConsole::_cmd_set(const String &p_name, const Variant &p_value) {
+	ZGlobalVar *global_var = ZGlobalVar::get_singleton();
+	if (!global_var) {
+		error("ZGlobalVar singleton is not available.");
+		return;
+	}
+
+	if (p_name.is_empty()) {
+		error("Variable name cannot be empty.");
+		return;
+	}
+
+	global_var->set_value(p_name, p_value);
+	info(vformat("%s = %s (%s)", format_name(p_name), p_value.stringify(), Variant::get_type_name(p_value.get_type())));
+}
+
+int ZConsole::_cmd_get(const String &p_name) {
+	ZGlobalVar *global_var = ZGlobalVar::get_singleton();
+	if (!global_var) {
+		error("ZGlobalVar singleton is not available.");
+		return ERR_UNAVAILABLE;
+	}
+
+	if (p_name.is_empty()) {
+		PackedStringArray names = global_var->get_names();
+		if (names.is_empty()) {
+			info("No global variables set.");
+			return OK;
+		}
+
+		for (int i = 0; i < names.size(); i++) {
+			Variant value = global_var->get_value(names[i]);
+			info(vformat("%s | %s | %s", format_name(names[i]), Variant::get_type_name(value.get_type()), value.stringify()));
+		}
+		return OK;
+	}
+
+	if (!global_var->has_value(p_name)) {
+		error("Global variable not found: " + p_name);
+		return ERR_DOES_NOT_EXIST;
+	}
+
+	Variant value = global_var->get_value(p_name);
+	info(vformat("%s | %s | %s", format_name(p_name), Variant::get_type_name(value.get_type()), value.stringify()));
+	return OK;
+}
+
+int ZConsole::_cmd_get_all() {
+	return _cmd_get(String());
+}
+
 ZConsole::~ZConsole() {
 	if (persist_history) {
 		_history_trim(1000);
@@ -126,6 +207,14 @@ ZConsole::~ZConsole() {
 	if (singleton == this) {
 		singleton = nullptr;
 	}
+}
+
+PackedStringArray ZConsole::_get_global_var_names() const {
+	ZGlobalVar *global_var = ZGlobalVar::get_singleton();
+	if (!global_var) {
+		return PackedStringArray();
+	}
+	return global_var->get_names();
 }
 
 void ZConsole::_notification(int p_what) {
@@ -203,12 +292,27 @@ void ZConsole::_build_gui() {
 	output->set_scroll_follow(true);
 	output->set_use_bbcode(true);
 	output->set_focus_mode(Control::FOCUS_CLICK);
+	output->add_theme_font_size_override("normal_font_size", font_size);
 	vbox->add_child(output);
 
 	entry = memnew(LineEdit);
 	entry->set_clear_button_enabled(true);
 	entry->set_shortcut_keys_enabled(true);
+	entry->set_keep_editing_on_text_submit(true);
+	entry->add_theme_font_size_override("font_size", font_size);
 	vbox->add_child(entry);
+}
+
+void ZConsole::input(const Ref<InputEvent> &p_event) {
+	if (!enabled || p_event.is_null()) {
+		return;
+	}
+	if (p_event->is_action_pressed(toggle_action_name)) {
+		toggle_console();
+		if (Window *root_window = get_tree() ? get_tree()->get_root() : nullptr) {
+			root_window->set_input_as_handled();
+		}
+	}
 }
 
 void ZConsole::_attach_signals() {
@@ -228,7 +332,10 @@ void ZConsole::_attach_signals() {
 
 void ZConsole::_apply_visuals() {
 	if (panel) {
-		panel->set_self_modulate(Color(1.0, 1.0, 1.0, opacity));
+		panel->set_self_modulate(Color(1.0, 1.0, 1.0, 1.0));
+		Ref<StyleBoxFlat> panel_style = memnew(StyleBoxFlat);
+		panel_style->set_bg_color(Color(0.05, 0.05, 0.05, opacity));
+		panel->add_theme_style_override("panel", panel_style);
 	}
 	if (output) {
 		output->add_theme_color_override("default_color", output_text_color);
@@ -759,7 +866,7 @@ void ZConsole::_handle_entry_input(const Ref<InputEvent> &p_event) {
 		}
 		return;
 	}
-	if (key_event->is_action_pressed("limbo_console_search_history")) {
+	if (key_event->is_action_pressed("z_console_search_history")) {
 		_search_history();
 		if (root_window) {
 			root_window->set_input_as_handled();
@@ -773,6 +880,9 @@ void ZConsole::_on_entry_text_submitted(const String &p_text) {
 	history_index = -1;
 	_fill_entry(String());
 	execute_command(p_text);
+	if (entry) {
+		entry->grab_focus();
+	}
 }
 
 void ZConsole::_on_entry_text_changed(const String &p_text) {
@@ -895,6 +1005,9 @@ void ZConsole::_register_builtin_commands() {
 	register_command(callable_mp(this, &ZConsole::_cmd_exec), "exec", "execute commands from file");
 	register_command(callable_mp(this, &ZConsole::_cmd_fps_max), "fps_max", "limit framerate");
 	register_command(callable_mp(this, &ZConsole::_cmd_fullscreen), "fullscreen", "toggle fullscreen mode");
+	register_command(callable_mp(this, &ZConsole::_cmd_set), "set", "set a global variable by name");
+	register_command(callable_mp(this, &ZConsole::_cmd_get), "get", "get global variable(s)");
+	register_command(callable_mp(this, &ZConsole::_cmd_get_all), "get_all", "get all global variables");
 	register_command(callable_mp(this, &ZConsole::_cmd_help), "help", "show command info");
 	register_command(callable_mp(this, &ZConsole::_cmd_log), "log", "show recent log entries");
 	register_command(callable_mp(this, &ZConsole::_cmd_quit), "quit", "exit the application");
@@ -902,6 +1015,8 @@ void ZConsole::_register_builtin_commands() {
 	register_command(callable_mp(this, &ZConsole::_cmd_vsync), "vsync", "adjust V-Sync");
 	register_command(callable_mp(this, &ZConsole::erase_history), "erase_history", "erase persisted history");
 	add_argument_autocomplete_source("help", 0, callable_mp(this, &ZConsole::get_command_names).bind(true));
+	add_argument_autocomplete_source("get", 0, callable_mp(this, &ZConsole::_get_global_var_names));
+	add_argument_autocomplete_source("set", 0, callable_mp(this, &ZConsole::_get_global_var_names));
 }
 
 void ZConsole::_register_default_input_actions() {
@@ -912,17 +1027,21 @@ void ZConsole::_register_default_input_actions() {
 	Vector<DefaultAction> actions;
 
 	DefaultAction toggle_action;
-	toggle_action.name = "limbo_console_toggle";
-	toggle_action.event = InputEventKey::create_reference(Key::QUOTELEFT);
+	toggle_action.name = toggle_action_name;
+	Key toggle_key = find_keycode(toggle_shortcut);
+	if (toggle_key == Key::NONE || toggle_key == Key::UNKNOWN) {
+		toggle_key = Key::QUOTELEFT;
+	}
+	toggle_action.event = InputEventKey::create_reference(toggle_key);
 	actions.push_back(toggle_action);
 
 	DefaultAction reverse_action;
-	reverse_action.name = "limbo_auto_complete_reverse";
+	reverse_action.name = "z_auto_complete_reverse";
 	reverse_action.event = InputEventKey::create_reference(KeyModifierMask::SHIFT | Key::TAB);
 	actions.push_back(reverse_action);
 
 	DefaultAction history_action;
-	history_action.name = "limbo_console_search_history";
+	history_action.name = "z_console_search_history";
 	history_action.event = InputEventKey::create_reference(KeyModifierMask::CTRL | Key::R);
 	actions.push_back(history_action);
 
@@ -930,6 +1049,9 @@ void ZConsole::_register_default_input_actions() {
 		const DefaultAction &action = actions[i];
 		if (!InputMap::get_singleton()->has_action(action.name)) {
 			InputMap::get_singleton()->add_action(action.name, InputMap::DEFAULT_TOGGLE_DEADZONE);
+		}
+		if (action.name == toggle_action_name) {
+			InputMap::get_singleton()->action_erase_events(action.name);
 		}
 		if (!InputMap::get_singleton()->action_has_event(action.name, action.event)) {
 			InputMap::get_singleton()->action_add_event(action.name, action.event);
@@ -1222,7 +1344,10 @@ void ZConsole::_add_argument_autocomplete(const PackedStringArray &p_argv, Packe
 
 void ZConsole::_add_subcommand_autocomplete(const String &p_text, PackedStringArray &r_matches) const {
 	PackedStringArray command_names = get_command_names(true);
-	PackedStringArray typed_tokens = p_text.split(" ", false);
+	PackedStringArray typed_tokens = p_text.split(" ", true);
+	if (typed_tokens.is_empty()) {
+		return;
+	}
 	HashMap<String, bool> unique;
 	for (int i = 0; i < command_names.size(); i++) {
 		PackedStringArray cmd_tokens = command_names[i].split(" ", false);
