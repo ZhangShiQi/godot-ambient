@@ -45,6 +45,7 @@ void initialize_zzz_module(ModuleInitializationLevel p_level) {
 	}
 
 	GDREGISTER_CLASS(ZConsole);
+   GDREGISTER_CLASS(ZVariant);
 	GDREGISTER_CLASS(ZGlobalVar);
 
 	init_console_singleton();

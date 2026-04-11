@@ -179,8 +179,10 @@ int ZConsole::_cmd_get(const String &p_name) {
 		}
 
 		for (int i = 0; i < names.size(); i++) {
-			Variant value = global_var->get_value(names[i]);
-			info(vformat("%s | %s | %s", format_name(names[i]), Variant::get_type_name(value.get_type()), value.stringify()));
+            Ref<ZVariant> zvar = global_var->get_value(names[i]);
+			Variant value = zvar.is_valid() ? zvar->get_value() : Variant();
+          String type_name = zvar.is_valid() ? zvar->get_type_name() : Variant::get_type_name(value.get_type());
+			info(vformat("%s | %s | %s", format_name(names[i]), type_name, value.stringify()));
 		}
 		return OK;
 	}
@@ -190,8 +192,10 @@ int ZConsole::_cmd_get(const String &p_name) {
 		return ERR_DOES_NOT_EXIST;
 	}
 
-	Variant value = global_var->get_value(p_name);
-	info(vformat("%s | %s | %s", format_name(p_name), Variant::get_type_name(value.get_type()), value.stringify()));
+  Ref<ZVariant> zvar = global_var->get_value(p_name);
+	Variant value = zvar.is_valid() ? zvar->get_value() : Variant();
+    String type_name = zvar.is_valid() ? zvar->get_type_name() : Variant::get_type_name(value.get_type());
+	info(vformat("%s | %s | %s", format_name(p_name), type_name, value.stringify()));
 	return OK;
 }
 
