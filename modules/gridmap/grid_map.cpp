@@ -1166,6 +1166,9 @@ void GridMap::_update_octants_callback() {
 		to_delete.remove_at_unordered(0);
 	}
 
+	// emit_signal(CoreStringName(octants_change));
+	emit_signal(SNAME("octants_changed"));
+
 	_update_visibility();
 	awaiting_update = false;
 }
@@ -1268,6 +1271,7 @@ void GridMap::_bind_methods() {
 
 	ADD_SIGNAL(MethodInfo("cell_size_changed", PropertyInfo(Variant::VECTOR3, "cell_size")));
 	ADD_SIGNAL(MethodInfo(CoreStringName(changed)));
+	ADD_SIGNAL(MethodInfo("octants_changed"));
 }
 
 void GridMap::set_cell_scale(float p_scale) {
